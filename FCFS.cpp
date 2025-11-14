@@ -1,5 +1,5 @@
 //--------------------------------------
-//  Round Robin Scheduling Algorithm
+//  FCFS Scheduling Algorithm
 //--------------------------------------
 
 //--------------------------------------
@@ -82,8 +82,6 @@ void read_problem_definition() {
     cin >> tick;
     cout << "Please enter the context switch time: ";
     cin >> context_switch_time;
-    cout << "Please enter the time quantum size: ";
-    cin >> quantum_time;
     for (int i = 0; i <= no_processes - 1; i++) {
         cout << "-----------------------------------------\n";
         cout << "Please enter the arrival time for " << "p" << to_string(i) << ": ";
@@ -92,6 +90,11 @@ void read_problem_definition() {
         cin >> execution_times[i];
         remaining_execution_times[i] = execution_times[i];\
     }
+    int max = execution_times[0];
+    for (int i = 1; i < execution_times.size(); i++)
+        if (execution_times[i] > max)
+            max = execution_times[i];
+    quantum_time = max;
 }
 
 // Initializations
