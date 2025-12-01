@@ -1,5 +1,6 @@
 //--------------------------------------
-//  Round Robin Scheduling Algorithm
+//  SRTF (converted from your FCFS)
+//  Minimal changes only
 //--------------------------------------
 
 //--------------------------------------
@@ -9,6 +10,7 @@
 #include <vector>
 #include <string>
 #include <queue>
+#include <limits>
 
 using namespace std;
 
@@ -51,9 +53,9 @@ int time_passed_from_current_context_switch;
 //--------------------------------------
 
 // Results
-vector<int> waiting_times(no_processes);
-vector<int> response_times (no_processes);
-vector<int> turnaround_times (no_processes);
+vector<int> waiting_times;
+vector<int> response_times;
+vector<int> turnaround_times;
 float utilization;
 float throughput;
 int current_time;
@@ -72,7 +74,6 @@ void read_problem_definition() {
     arrival_times.resize(no_processes);
     execution_times.resize(no_processes);
     remaining_execution_times.resize(no_processes);
-    remaining_execution_times.resize(no_processes);
     execution_start_times.resize(no_processes);
     departure_times.resize(no_processes);
     running_times.resize(no_processes);
@@ -82,16 +83,19 @@ void read_problem_definition() {
     cin >> tick;
     cout << "Please enter the context switch time: ";
     cin >> context_switch_time;
-    cout << "Please enter the time quantum size: ";
-    cin >> quantum_time;
     for (int i = 0; i <= no_processes - 1; i++) {
         cout << "-----------------------------------------\n";
         cout << "Please enter the arrival time for " << "p" << to_string(i) << ": ";
         cin >> arrival_times[i];
         cout << "Please enter the execution time for " << "p" << to_string(i) << ": ";
         cin >> execution_times[i];
-        remaining_execution_times[i] = execution_times[i];\
+        remaining_execution_times[i] = execution_times[i];
     }
+    int max = execution_times[0];
+    for (int i = 1; i < execution_times.size(); i++)
+        if (execution_times[i] > max)
+            max = execution_times[i];
+    quantum_time = max;
 }
 
 // Initializations
@@ -106,6 +110,13 @@ void get_ready_to_schedule() {
     admitted.resize(no_processes, false);
     already_dispatched.resize(no_processes, false);
     terminated.resize(no_processes, false);
+
+    waiting_times.clear();
+    response_times.clear();
+    turnaround_times.clear();
+    waiting_times.resize(no_processes);
+    response_times.resize(no_processes);
+    turnaround_times.resize(no_processes);
 }
 
 // For scheduling cases where
@@ -158,27 +169,67 @@ int first_unadmitted_processes_index() {
 // that has arrived earliest (among all 
 // unadmitted processes)
 int oldest_unadmitted_process_index() {
-    int to_be_returned = find_shortest_remaining_time_process_index();
-    for (int i = 1; i <= no_processes - 1; i++) {
-        if (arrival_times[i] < arrival_times [to_be_returned] && !admitted[i] && arrival_times[i] <= current_time) {
-            to_be_returned = 1;
+    int to_be_returned = first_unadmitted_processes_index();
+    if (to_be_returned == no_processes) return to_be_returned;
+    for (int i = 0; i <= no_processes - 1; i++) {
+        if (!admitted[i] && arrival_times[i] <= current_time && arrival_times[i] < arrival_times [to_be_returned]) {
+            to_be_returned = i;
         }
     }
     return to_be_returned;
 }
 
-int find_shortest_remaining_time_process_index() {
-    int to_be_returned = -1;
-    int min_remaining_time = INT_MAX;
-    for (int i = 0; i <= no_processes - 1; i++) {
-        if (!terminated[i] && admitted[i]) {
-            if (remaining_execution_times[i] < min_remaining_time) {
-                min_remaining_time = remaining_execution_times[i];
-                to_be_returned = i;
-            }
+// ---------------------------
+// New/changed helper functions
+// ---------------------------
+
+// Find index of process with shortest remaining execution time
+// among running process and processes in ready_queue.
+// Returns -1 if nothing exists.
+int find_shortest_overall() {
+    int shortest = -1;
+    int shortest_time = 9999999;
+
+    // Check running process
+    if (system_is_running_a_process && running_process >= 0 && !terminated[running_process]) {
+        shortest = running_process;
+        shortest_time = remaining_execution_times[running_process];
+    }
+
+    // Check ready queue
+    queue<int> temp = ready_queue;
+    while (!temp.empty()) {
+        int p = temp.front();
+        temp.pop();
+        if (!terminated[p] && remaining_execution_times[p] < shortest_time) {
+            shortest = p;
+            shortest_time = remaining_execution_times[p];
         }
     }
-    return to_be_returned;
+
+    return shortest;
+}
+
+// Remove and return the process in ready_queue with the shortest remaining time.
+// If ready_queue empty, returns -1.
+int remove_shortest_from_ready_queue() {
+    if (ready_queue.empty()) return -1;
+    int shortest = ready_queue.front();
+    queue<int> temp;
+    ready_queue.pop();
+
+    while (!ready_queue.empty()) {
+        int p = ready_queue.front();
+        ready_queue.pop();
+        if (remaining_execution_times[p] < remaining_execution_times[shortest]) {
+            temp.push(shortest);
+            shortest = p;
+        } else {
+            temp.push(p);
+        }
+    }
+    ready_queue = temp;
+    return shortest;
 }
 
 // The processes that have arrived after 
@@ -186,8 +237,38 @@ int find_shortest_remaining_time_process_index() {
 // are admitted to the ready queue
 void admit_newly_arrived_processes() {
     while(there_exist_unadmitted_processes()) {
-        ready_queue.push(oldest_unadmitted_process_index()); 
-        admitted [oldest_unadmitted_process_index()] = true;
+        int newp = oldest_unadmitted_process_index();
+        if (newp == no_processes) break;
+        ready_queue.push(newp);
+        admitted[newp] = true;
+
+        if (system_is_running_a_process) {
+            int shortest = find_shortest_overall();
+
+            if (shortest != running_process && shortest != -1) {
+                system_is_running_a_process = false;
+                system_is_in_context_switch = true;
+                time_passed_from_current_context_switch = 0;
+
+                if (!terminated[running_process]) {
+                    ready_queue.push(running_process);
+                }
+
+                queue<int> new_q;
+                bool removed = false;
+                while (!ready_queue.empty()) {
+                    int p = ready_queue.front();
+                    ready_queue.pop();
+                    if (!removed && p == shortest) {
+                        removed = true;
+                        continue;
+                    }
+                    new_q.push(p);
+                }
+                ready_queue = new_q;
+                next_process = shortest;
+            }
+        }
     }
 }
 
@@ -209,8 +290,7 @@ void make_decisions_and_updates() {
     // (Some processes are in the ready queue and
     // no process has been dispatched yet
     if (!ready_queue.empty() && !first_process_dispatched) {
-        next_process = ready_queue.front();
-        ready_queue.pop();
+        next_process = remove_shortest_from_ready_queue();
         system_is_in_context_switch = true;
         system_is_running_a_process = false;
         first_process_dispatched = true;
@@ -220,7 +300,7 @@ void make_decisions_and_updates() {
     // A context switch has been started,
     // but context switch time has not
     // passed yet
-    if (system_is_in_context_switch & time_passed_from_current_context_switch < context_switch_time) {
+    if (system_is_in_context_switch && time_passed_from_current_context_switch < context_switch_time) {
         do_nothing();
     }
 
@@ -236,7 +316,7 @@ void make_decisions_and_updates() {
         }
     }
 
-    // The system is rnning a process and the
+    // The system is running a process and the
     // running process has finished its computations
     if (system_is_running_a_process && remaining_execution_times [running_process] <= 0) {
         system_is_running_a_process = false;
@@ -245,22 +325,21 @@ void make_decisions_and_updates() {
         if (!ready_queue.empty()) {
             system_is_in_context_switch = true;
             time_passed_from_current_context_switch = 0;
-            next_process = ready_queue.front(); 
-            ready_queue.pop();
+            next_process = remove_shortest_from_ready_queue(); 
         }
     }
 
     // The system is running a process,
     // The running process has not completed its
     // computations yet, but the context switch
-    // time has expired
+    // time has expired (quantum expired)
     if (system_is_running_a_process && remaining_execution_times [running_process] > 0 && time_passed_from_current_quantum >= quantum_time) {
         if (!ready_queue.empty()) {
             system_is_running_a_process = false;
             system_is_in_context_switch = true;
             time_passed_from_current_context_switch = 0;
-            next_process = ready_queue.front();
-            ready_queue.pop();
+            next_process = remove_shortest_from_ready_queue();
+            // push the old running back to ready queue
             ready_queue.push(running_process);
         } else {
             time_passed_from_current_quantum = 0;
@@ -352,4 +431,5 @@ int main() {
     scehdule();
     calculate_results();
     print_results();
+    return 0;
 }
