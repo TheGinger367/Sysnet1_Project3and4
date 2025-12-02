@@ -388,7 +388,7 @@ void scehdule() {
 // CPU Utilization 
 // and throughput
 void calculate_results() {
-    total_time = current_time;
+    total_time = current_time - tick;
     waiting_times.resize(no_processes);
     response_times.resize(no_processes);
     turnaround_times.resize(no_processes);
@@ -399,8 +399,9 @@ void calculate_results() {
         waiting_times[i] = turnaround_times[i] - execution_times[i];
         response_times[i] = execution_start_times[i] - arrival_times[i];
     }
-    throughput = (float)no_processes / total_time;
-    utilization = (float)cpu_efficient_time / total_time;
+    throughput = (float)no_processes / (float)total_time;
+    utilization = (float)cpu_efficient_time / (float)total_time;
+    cout << "\nTotal time: " << total_time << endl;
 }
 
 
@@ -419,6 +420,7 @@ void print_results() {
     cout << "\n----------------------------------\n";
     cout << "Throughput: " << throughput << endl;
     cout << "CPU utilization: " << utilization << endl;
+  
 }
 
 //--------------------------------------
